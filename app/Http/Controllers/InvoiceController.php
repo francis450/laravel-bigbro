@@ -20,7 +20,12 @@ class InvoiceController extends Controller
     {
         $invoices = Invoice::all();
 
-        return response()->json($invoices);
+        $response = response()->json($invoices);
+        $response->header('Access-Control-Allow-Origin', '*');
+        $response->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+        $response->header('Access-Control-Allow-Headers', 'Origin, Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+
+        return $response;
     }
 
     /**
@@ -38,13 +43,22 @@ class InvoiceController extends Controller
      */
     public function store(Request $request)
     {
+        // Handle preflight requests
+        if ($request->isMethod('options')) {
+            return response('', 200)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE, PUT')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+        }
+
         // Define validation rules
         $rules = [
-            'client.id' => 'required|integer',
-            'client.name' => 'string',
+            'client.id' => 'required|integer|exists:clients,id',
+            'client.name' => 'string|nullable',
+            'selectedItems.*.item_id' => 'required|integer|exists:inventory_items,id',
             'selectedItems.*.item_name' => 'required|string',
-            'selectedItems.*.quantity' => 'required',
-            'selectedItems.*.price' => 'required|numeric',
+            'selectedItems.*.quantity' => 'required|integer|min:1',
+            'selectedItems.*.price' => 'required|numeric|min:0',
             'selectedItems.*.taxable' => 'boolean',
         ];
 
@@ -53,52 +67,62 @@ class InvoiceController extends Controller
 
         // Check if validation fails
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            return response()->json(['errors' => $validator->errors()], 422)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE, PUT')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
         }
-        $invoice_total = 0;
-        foreach ($request->selectedItems as $item) {
-            $invoice_total += $item['price'] * $item['quantity'];
-        }
-        $invoice = new Invoice();
-        $client = Client::find($request->client['id']);
-        $invoice->client_id = $client->id;
-        $invoice->user_id = Auth::id();
-        $invoice->total = $invoice_total;
-        $invoice->invoice_number = $request->invoice_number;
 
-        $invoice->save();
-
-        // save invoice items
-        foreach ($request->selectedItems as $item) {
-            $inventory_item = InventoryItem::find($item['item_id']);
-            $inventory_item_id = $inventory_item->id;
-            $invoice_id = $invoice->id;
-            $quantity = $item['quantity'];
-            $price = $item['price'];
-
-
-            $invoice_item = new Item();
-            // check if there is a property named taxable in the item object          
-            if (array_key_exists('taxable', $item)) {
-
-                $invoice_item->total_tax = 0.16 * $price * $quantity;
-            } else {
-                $invoice_item->total_tax = 0;
+        DB::beginTransaction();
+        try {
+            // Calculate the total invoice amount
+            $invoice_total = 0;
+            foreach ($request->selectedItems as $item) {
+                $invoice_total += $item['price'] * $item['quantity'];
             }
 
-            $invoice_item->inventory_item_id = $inventory_item_id;
-            $invoice_item->invoice_id = $invoice_id;
-            $invoice_item->quantity = $quantity;
-            $invoice_item->price = $price;
+            // Create a new invoice
+            $invoice = new Invoice();
+            $client = Client::findOrFail($request->client['id']);
+            $invoice->client_id = $client->id;
+            $invoice->user_id = Auth::id();
+            $invoice->total = $invoice_total;
+            $invoice->invoice_number = $request->invoice_number;
 
-            $invoice_item->save();
+            $invoice->save();
+
+            // Save invoice items
+            foreach ($request->selectedItems as $item) {
+                $inventory_item = InventoryItem::findOrFail($item['item_id']);
+
+                $invoice_item = new Item();
+                $invoice_item->inventory_item_id = $inventory_item->id;
+                $invoice_item->invoice_id = $invoice->id;
+                $invoice_item->quantity = $item['quantity'];
+                $invoice_item->price = $item['price'];
+
+                if (array_key_exists('taxable', $item) && $item['taxable']) {
+                    $invoice_item->total_tax = 0.16 * $item['price'] * $item['quantity'];
+                } else {
+                    $invoice_item->total_tax = 0;
+                }
+
+                $invoice_item->save();
+            }
+
+            DB::commit();
+
+            return response()->json($invoice, 201)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE, PUT')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'An error occurred while processing your request.'], 500)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS, DELETE, PUT')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
         }
-
-
-        // client details
-
-
-        return response()->json($invoice, 201);
     }
 
     /**

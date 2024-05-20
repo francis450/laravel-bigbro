@@ -14,9 +14,13 @@ class ClientController extends Controller
     {
         $clients = Client::all();
 
-        return response()->json(
-            $clients
-        );
+        $response = response()->json($clients);
+
+        $response->header('Access-Control-Allow-Origin', '*');
+        $response->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+        $response->header('Access-Control-Allow-Headers', 'Origin, Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+
+        return $response;
     }
 
     /**
@@ -34,7 +38,7 @@ class ClientController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|lowercase|email|max:255|unique:'.Client::class,
+            'email' => 'required|string|lowercase|email|max:255|unique:' . Client::class,
             'phone' => 'string',
             'kra_pin' => 'string'
         ]);
@@ -48,9 +52,16 @@ class ClientController extends Controller
 
         $clients = Client::all();
 
-        return response()->json(
-            $clients,201
+        $response = response()->json(
+            $clients,
+            201
         );
+
+        $response->header('Access-Control-Allow-Origin', '*');
+        $response->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+        $response->header('Access-Control-Allow-Headers', 'Origin, Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+
+        return $response;
     }
 
     /**

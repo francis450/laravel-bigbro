@@ -14,7 +14,11 @@ class InventoryItemController extends Controller
     {
         $item = InventoryItem::all();
 
-        return response()->json($item);
+        $response = response()->json($item,201);
+        $response->header('Access-Control-Allow-Origin', '*');
+        $response->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+        $response->header('Access-Control-Allow-Headers', 'Origin, Content-Type, X-Auth-Token, Authorization, Accept,charset,boundary,Content-Length');
+        return $response;
     }
 
     /**
